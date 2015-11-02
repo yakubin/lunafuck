@@ -1,0 +1,11 @@
+---
+BasedOnStyle:  Google
+AlignAfterOpenBracket: true
+AlignConsecutiveAssignments: true
+#AlignConsecutiveDeclarations: true # since ClangFormat 3.8
+AlignOperands: true
+AlignTrailingComments: true
+IndentCaseLabels: false
+IndentWidth: 4
+TabWidth: 4
+...
