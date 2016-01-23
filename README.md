@@ -38,7 +38,7 @@ logo in file logo.svg.
 
 # Copyright
 
-Copyright (c) 2015, Jakub Kucharski <prooxod@gmail.com>
+Copyright (c) 2015, Jakub Kucharski <jakubkucharski97@gmail.com>
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, 
