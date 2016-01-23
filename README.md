@@ -6,7 +6,7 @@ It directly generates an elf file (no assembly, no linking).
 ## Installation (from source code)
 
 ```
-    $ git clone https://github.com/prooxod/lunafuck.git
+    $ git clone https://github.com/yakubin/lunafuck.git
     $ cd lunafuck
     $ make
     $ sudo cp ./lunafuck /usr/local/bin/
