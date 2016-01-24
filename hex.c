@@ -178,7 +178,10 @@ static size_t append_hex_in(uint8_t* dst) {
     return 6;
 }
 
-// appends hex instructions for jumping to he beginning of a loop
+// appends hex instructions for jumping to the code after a loop
+// 
+// dst[4] should be later set by the caller to the appropriate relative 
+// displacement
 //
 // @param `dst`:    pointer to the place where the instructions should be
 //                  written;
@@ -187,7 +190,29 @@ static size_t append_hex_in(uint8_t* dst) {
 //
 // @return:
 // amount of bytes written to @param `dst` (5)
-static size_t append_loop_hex_jump(uint8_t* dst, int8_t rel_dis) {
+static size_t append_hex_pre_loop_jump(uint8_t* dst) {
+    // cmp byte [ecx], 0x00
+    dst[0] = 0x80;
+    dst[1] = 0x39;
+    dst[2] = 0x00;
+
+    // jz rd
+    dst[3] = 0x74;
+    // dst[4] = rel_dis; <- for later setting
+
+    return 5;
+}
+
+// appends hex instructions for jumping to the beginning of a loop
+//
+// @param `dst`:    pointer to the place where the instructions should be
+//                  written;
+//                      * MUST NOT BE NULL
+//                      * MUST HAVE AT LEAST 5 BYTES OF ALLOCATED SPACE
+//
+// @return:
+// amount of bytes written to @param `dst` (5)
+static size_t append_hex_post_loop_jump(uint8_t* dst, int8_t rel_dis) {
     // cmp byte [ecx], 0x00
     dst[0] = 0x80;
     dst[1] = 0x39;
@@ -280,39 +305,44 @@ size_t code_list_to_hex(uint8_t** dst, struct code_list* code_list) {
 
     // promise (*dst filled with zeroes) satisfied by calloc
     size_t curaddr = init_text_seg(*dst);
+    size_t loop_beg;
 
     struct code_list_node* node = code_list->first;
     for (; node != NULL; node = node->next) {
         switch (node->id) {
         case OP_ASCII_ADD:
-            curaddr += append_ascii_hex_add((*dst) + curaddr, node->arg);
+            curaddr += append_ascii_hex_add(*dst + curaddr, node->arg);
             break;
         case OP_ASCII_SUB:
-            curaddr += append_ascii_hex_sub((*dst) + curaddr, node->arg);
+            curaddr += append_ascii_hex_sub(*dst + curaddr, node->arg);
             break;
         case OP_CELL_ADD:
-            curaddr += append_cell_hex_add((*dst) + curaddr, node->arg);
+            curaddr += append_cell_hex_add(*dst + curaddr, node->arg);
             break;
         case OP_CELL_SUB:
-            curaddr += append_cell_hex_sub((*dst) + curaddr, node->arg);
+            curaddr += append_cell_hex_sub(*dst + curaddr, node->arg);
             break;
         case OP_OUT:
-            curaddr += append_hex_out((*dst) + curaddr);
+            curaddr += append_hex_out(*dst + curaddr);
             break;
         case OP_IN:
-            curaddr += append_hex_in((*dst) + curaddr);
+            curaddr += append_hex_in(*dst + curaddr);
             break;
         case OP_LOOP_LABEL:
+            curaddr += append_hex_pre_loop_jump(*dst + curaddr);
             addrstack_push(curaddr);
             break;
         case OP_LOOP_JUMP:
-            curaddr += append_loop_hex_jump((*dst) + curaddr,
-                                            addrstack_pop() - curaddr);
+            loop_beg = addrstack_pop();
+            curaddr += append_hex_post_loop_jump(*dst + curaddr,
+                                                 loop_beg - curaddr);
+            // set relative displacement for the jump at the beggining of loop
+            (*dst)[loop_beg-1] = curaddr - loop_beg;
             break;
         case OP_INVALID:  // to silence the compiler
             break;
         }
     }
-    curaddr += append_hex_exit((*dst) + curaddr);
+    curaddr += append_hex_exit(*dst + curaddr);
     return curaddr;
 }
