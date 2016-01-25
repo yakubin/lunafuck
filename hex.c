@@ -8,6 +8,22 @@
 #include "codelist.h"
 #include "hex.h"
 
+// appends @param `num` to @param `dst` in little endian order
+//
+// @param `dst`:
+//      * MUST NOT BE NULL
+//      * MUST HAVE AT LEAST 4 BYTES OF ALLOCATED SPACE
+//
+// @return:
+// number of bytes appended to @param `dst` (4)
+static size_t append_little_endian_uint32(uint8_t* dst, uint32_t num) {
+    dst[0] = num & 0xff;
+    dst[1] = (num & (0xff << 8)) >> 8;
+    dst[2] = (num & (0xff << 16)) >> 16;
+    dst[3] = (num & (0xff << 24)) >> 24;
+    return 4;
+}
+
 // appends hex instructions for moving data ptr upwards
 //
 // @param `dst`:    pointer to the place where the instructions should be
@@ -34,11 +50,7 @@ static size_t append_cell_hex_add(uint8_t* dst, uint32_t arg) {
     // sub ecx, operand
     dst[0] = 0x81;
     dst[1] = 0xe9;
-    dst[2] = operand & 0xff;
-    dst[3] = (operand & (0xff << 8)) >> 8;
-    dst[4] = (operand & (0xff << 16)) >> 16;
-    dst[5] = (operand & (0xff << 24)) >> 24;
-    return 6;
+    return 2 + append_little_endian_uint32(dst+2, operand);
 }
 
 // appends hex instructions for moving data ptr downwards
@@ -67,11 +79,7 @@ static size_t append_cell_hex_sub(uint8_t* dst, uint32_t arg) {
     // add ecx, operand
     dst[0] = 0x81;
     dst[1] = 0xc1;
-    dst[2] = operand & 0xff;
-    dst[3] = (operand & (0xff << 8)) >> 8;
-    dst[4] = (operand & (0xff << 16)) >> 16;
-    dst[5] = (operand & (0xff << 24)) >> 24;
-    return 6;
+    return 2 + append_little_endian_uint32(dst+2, operand);
 }
 
 // appends hex instructions for increasing the value of a cell
@@ -180,16 +188,16 @@ static size_t append_hex_in(uint8_t* dst) {
 
 // appends hex instructions for jumping to the code after a loop
 // 
-// dst[4] should be later set by the caller to the appropriate relative 
-// displacement
+// dst[5:9] should be later set by the caller to the appropriate relative 
+// displacement in little endian format
 //
 // @param `dst`:    pointer to the place where the instructions should be
 //                  written;
 //                      * MUST NOT BE NULL
-//                      * MUST HAVE AT LEAST 5 BYTES OF ALLOCATED SPACE
+//                      * MUST HAVE AT LEAST 9 BYTES OF ALLOCATED SPACE
 //
 // @return:
-// amount of bytes written to @param `dst` (5)
+// amount of bytes written to @param `dst` (9)
 static size_t append_hex_pre_loop_jump(uint8_t* dst) {
     // cmp byte [ecx], 0x00
     dst[0] = 0x80;
@@ -197,10 +205,11 @@ static size_t append_hex_pre_loop_jump(uint8_t* dst) {
     dst[2] = 0x00;
 
     // jz rd
-    dst[3] = 0x74;
-    // dst[4] = rel_dis; <- for later setting
+    dst[3] = 0x0f;
+    dst[4] = 0x84;
+    // dst[5:9] left for later setting by the caller
 
-    return 5;
+    return 9;
 }
 
 // appends hex instructions for jumping to the beginning of a loop
@@ -208,21 +217,30 @@ static size_t append_hex_pre_loop_jump(uint8_t* dst) {
 // @param `dst`:    pointer to the place where the instructions should be
 //                  written;
 //                      * MUST NOT BE NULL
-//                      * MUST HAVE AT LEAST 5 BYTES OF ALLOCATED SPACE
+//                      * MUST HAVE AT LEAST 9 BYTES OF ALLOCATED SPACE
 //
 // @return:
-// amount of bytes written to @param `dst` (5)
-static size_t append_hex_post_loop_jump(uint8_t* dst, int8_t rel_dis) {
+// amount of bytes written to @param `dst`
+static size_t append_hex_post_loop_jump(uint8_t* dst, int32_t rel_dis) {
     // cmp byte [ecx], 0x00
     dst[0] = 0x80;
     dst[1] = 0x39;
     dst[2] = 0x00;
 
-    // jnz rd
-    dst[3] = 0x75;
-    dst[4] = rel_dis - 5;
+    rel_dis -= 5;
+    int32_t mask = ~0xff;
+    if ((rel_dis & mask) == 0) {
+        // jnz rd
+        dst[3] = 0x75;
+        dst[4] = rel_dis;
+        return 5;
+    }
 
-    return 5;
+    rel_dis -= 4;
+    // jnz rd
+    dst[3] = 0x0f;
+    dst[4] = 0x85;
+    return 5 + append_little_endian_uint32(dst+5, rel_dis);
 }
 
 // appends hex instructions for exiting with code 0
@@ -301,11 +319,12 @@ static size_t init_text_seg(uint8_t* dst) {
 }
 
 size_t code_list_to_hex(uint8_t** dst, struct code_list* code_list) {
-    *dst = calloc(6 * code_list->size + 18, 1);
+    *dst = calloc(9 * code_list->size + 18, 1);
 
     // promise (*dst filled with zeroes) satisfied by calloc
     size_t curaddr = init_text_seg(*dst);
     size_t loop_beg;
+    int32_t rel_dis;
 
     struct code_list_node* node = code_list->first;
     for (; node != NULL; node = node->next) {
@@ -334,10 +353,15 @@ size_t code_list_to_hex(uint8_t** dst, struct code_list* code_list) {
             break;
         case OP_LOOP_JUMP:
             loop_beg = addrstack_pop();
-            curaddr += append_hex_post_loop_jump(*dst + curaddr,
-                                                 loop_beg - curaddr);
+            rel_dis = loop_beg - curaddr;
+            curaddr += append_hex_post_loop_jump(*dst + curaddr, rel_dis);
+
             // set relative displacement for the jump at the beggining of loop
-            (*dst)[loop_beg-1] = curaddr - loop_beg;
+            rel_dis = curaddr - loop_beg;
+            (*dst)[loop_beg-4] = rel_dis & 0xff;
+            (*dst)[loop_beg-3] = (rel_dis & (0xff << 8)) >> 8;
+            (*dst)[loop_beg-2] = (rel_dis & (0xff << 16)) >> 16;
+            (*dst)[loop_beg-1] = (rel_dis & (0xff << 24)) >> 24;
             break;
         case OP_INVALID:  // to silence the compiler
             break;
