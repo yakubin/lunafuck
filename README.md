@@ -1,5 +1,5 @@
 # lunafuck
-## X86-32 brainfuck compiler for SUS systems
+## X86-32 brainfuck compiler for Linux
 
 It directly generates an elf file (no assembly, no linking).
 
