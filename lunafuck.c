@@ -154,7 +154,7 @@ void help() {
             "lunafuck 0.1.0\n\n\tusage: lunafuck output_file input_file\n\n");
     fprintf(
         stderr,
-        "Copyright (c) 2015, Jakub Kucharski <jakubkucharski97@gmail.com>\nAll rights "
+        "Copyright (c) 2015-2016, Jakub Alba <jakubalba@gmail.com>\nAll rights "
         "reserved.\n\nRedistribution and use in source and binary forms, with "
         "or without modification,\nare permitted provided that the following "
         "conditions are met:\n\n1. Redistributions of source code must retain "
